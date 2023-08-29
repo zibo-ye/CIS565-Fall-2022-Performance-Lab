@@ -186,15 +186,44 @@ __global__ void matrixTransposeSharedwBC(const float* const a, float* const b)
 template<int TILE, int SIDE>
 __global__ void matrixTransposeUnrolled(const float* a, float* b)
 {
-    //Allocate appropriate shared memory
+    // Allocate appropriate shared memory - use mat as variable name
+    // Example: <shared specifier> type mat[size][size]; - replace size with the correct values
+    __shared__ float mat[TILE][TILE + 1];
 
-    //Compute input and output index
-    int x = 0;
-    int y = 0;
+    // Compute input and output index
+    int bx = blockIdx.x * TILE;     // Compute block offset - this is number of global threads in X before this block
+    int by = blockIdx.y * TILE;     // Compute block offset - this is number of global threads in Y before this block
+    int i = bx + threadIdx.x;              // Global input x index - Same as previous kernels
+    int j = by + threadIdx.y;              // Global input y index - Same as previous kernels
 
-    //Copy data from input to shared memory. Multiple copies per thread.
+    // We are transposing the blocks here. See how ti uses by and tj uses bx
+    // We transpose blocks using indices, and transpose with block sub-matrix using the shared memory
+    int ti = by + threadIdx.x;              // Global output x index - remember the transpose
+    int tj = bx + threadIdx.y;              // Global output y index - remember the transpose
 
-    //Copy data from shared memory to global memory. Multiple copies per thread.
+    // Copy data from input to shared memory
+    // Check for bounds
+#pragma unroll
+    for (int k = 0; k < TILE; k += SIDE)
+    {
+        if (i < sizeX && j + k < sizeY)
+        {
+			mat[threadIdx.y + k][threadIdx.x] = a[(j + k) * sizeX + i];
+		}
+	}
+
+    __syncthreads();
+
+    // Copy data from shared memory to global memory
+    // Check for bounds
+#pragma unroll
+    for (int k = 0; k < TILE; k += SIDE)
+    {
+        if (ti < sizeY && tj + k < sizeX)
+        {
+            b[(tj + k) * sizeY + ti] = mat[threadIdx.x][threadIdx.y + k]; // Switch threadIdx.x and threadIdx.y from input read
+        }
+    }
 }
 
 int main(int argc, char *argv[])
